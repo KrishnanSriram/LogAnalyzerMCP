@@ -1,0 +1,304 @@
+"""
+Synchronous HTTP Client for FastMCP GitLab Log Analyzer
+Connects to HTTP server on port 8000
+"""
+import asyncio
+
+import requests
+from typing import Optional, Dict, List
+from fastmcp import Client
+
+
+class GitLabLogAnalyzer:
+    """
+    Synchronous HTTP client for GitLab Log Analyzer
+    Connects to FastMCP server over HTTP on port 8000
+    """
+
+    def __init__(self, base_url: str = "http://127.0.0.1:8000"):
+        """
+        Initialize the HTTP client
+
+        Args:
+            base_url: Base URL of the HTTP server (default: http://localhost:8000)
+        """
+        self.base_url = base_url
+        self.session = requests.Session()
+        self.timeout = 120  # 2 minutes timeout for LLM processing
+
+    def health_check(self) -> Dict:
+        """Check if the server is running"""
+        response = self.session.get(f"{self.base_url}/", timeout=5)
+        response.raise_for_status()
+        return response.json()
+
+    def detailed_health(self) -> Dict:
+        """Get detailed health status"""
+        response = self.session.get(f"{self.base_url}/health", timeout=5)
+        response.raise_for_status()
+        return response.json()
+
+    def list_tools(self) -> List[Dict]:
+        """Get list of available analysis tools"""
+        response = self.session.get(f"{self.base_url}/tools", timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        return data.get("tools", [])
+
+    def analyze(
+            self,
+            tool_name: str,
+            log_content: Optional[str] = None,
+            tf_init: Optional[str] = None,
+            tf_plan: Optional[str] = None,
+            tf_scan: Optional[str] = None,
+            final_status: Optional[str] = None,
+            other_sections: Optional[str] = None,
+            analysis_results: Optional[str] = None
+    ) -> Dict:
+        """
+        Generic analysis method
+
+        Args:
+            tool_name: Name of the analysis tool to use
+            log_content: Log section content (for single section tools)
+            tf_init: Terraform init content (for summarize_pipeline)
+            tf_plan: Terraform plan content (for summarize_pipeline)
+            tf_scan: Terraform scan content (for summarize_pipeline)
+            final_status: Final status content (for summarize_pipeline)
+            other_sections: Other sections (for summarize_pipeline)
+            analysis_results: Combined analysis (for get_recommendations)
+
+        Returns:
+            Dict with analysis results
+        """
+        payload = {
+            "tool_name": tool_name,
+            "log_content": log_content,
+            "tf_init": tf_init,
+            "tf_plan": tf_plan,
+            "tf_scan": tf_scan,
+            "final_status": final_status,
+            "other_sections": other_sections,
+            "analysis_results": analysis_results
+        }
+
+        response = self.session.post(
+            f"{self.base_url}/analyze",
+            json=payload,
+            timeout=self.timeout
+        )
+        response.raise_for_status()
+        return response.json()
+
+    # Convenience methods for specific analyses
+
+    def analyze_terraform_init(self, log_content: str) -> str:
+        """
+        Analyze Terraform init log section
+
+        Args:
+            log_content: The terraform init log content
+
+        Returns:
+            Analysis as string
+        """
+        result = self.analyze("analyze_terraform_init", log_content=log_content)
+        if result.get("status") == "success":
+            return result.get("analysis", "")
+        else:
+            raise Exception(result.get("error", "Analysis failed"))
+
+    def analyze_terraform_plan(self, log_content: str) -> str:
+        """
+        Analyze Terraform plan log section
+
+        Args:
+            log_content: The terraform plan log content
+
+        Returns:
+            Analysis as string
+        """
+        result = self.analyze("analyze_terraform_plan", log_content=log_content)
+        if result.get("status") == "success":
+            return result.get("analysis", "")
+        else:
+            raise Exception(result.get("error", "Analysis failed"))
+
+    def analyze_terraform_scan(self, log_content: str) -> str:
+        """
+        Analyze Terraform security scan results
+
+        Args:
+            log_content: The terraform scan log content
+
+        Returns:
+            Analysis as string
+        """
+        result = self.analyze("analyze_terraform_scan", log_content=log_content)
+        if result.get("status") == "success":
+            return result.get("analysis", "")
+        else:
+            raise Exception(result.get("error", "Analysis failed"))
+
+    def analyze_job_failure(self, log_content: str) -> str:
+        """
+        Analyze job failure final status
+
+        Args:
+            log_content: The final status log content
+
+        Returns:
+            Analysis as string
+        """
+        result = self.analyze("analyze_job_failure", log_content=log_content)
+        if result.get("status") == "success":
+            return result.get("analysis", "")
+        else:
+            raise Exception(result.get("error", "Analysis failed"))
+
+    def extract_errors(self, log_content: str) -> str:
+        """
+        Extract and categorize errors from log
+
+        Args:
+            log_content: The log content to analyze
+
+        Returns:
+            Categorized errors as string
+        """
+        result = self.analyze("extract_errors", log_content=log_content)
+        if result.get("status") == "success":
+            return result.get("analysis", "")
+        else:
+            raise Exception(result.get("error", "Analysis failed"))
+
+    def summarize_pipeline(
+            self,
+            tf_init: Optional[str] = None,
+            tf_plan: Optional[str] = None,
+            tf_scan: Optional[str] = None,
+            final_status: Optional[str] = None,
+            other_sections: Optional[str] = None
+    ) -> str:
+        """
+        Generate comprehensive pipeline summary
+
+        Args:
+            tf_init: Terraform init section content
+            tf_plan: Terraform plan section content
+            tf_scan: Terraform scan section content
+            final_status: Final status section content
+            other_sections: Any other relevant sections
+
+        Returns:
+            Pipeline summary as string
+        """
+        result = self.analyze(
+            "summarize_pipeline",
+            tf_init=tf_init,
+            tf_plan=tf_plan,
+            tf_scan=tf_scan,
+            final_status=final_status,
+            other_sections=other_sections
+        )
+        if result.get("status") == "success":
+            return result.get("analysis", "")
+        else:
+            raise Exception(result.get("error", "Analysis failed"))
+
+    def get_recommendations(self, analysis_results: str) -> str:
+        """
+        Get actionable recommendations based on analysis
+
+        Args:
+            analysis_results: Combined analysis results from other tools
+
+        Returns:
+            Recommendations as string
+        """
+        result = self.analyze("get_recommendations", analysis_results=analysis_results)
+        if result.get("status") == "success":
+            return result.get("analysis", "")
+        else:
+            raise Exception(result.get("error", "Analysis failed"))
+
+    def close(self):
+        """Close the HTTP session"""
+        self.session.close()
+
+    def __enter__(self):
+        """Context manager entry"""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit"""
+        self.close()
+
+
+def main():
+    # Initialize client
+    client = GitLabLogAnalyzer()
+
+    # Health check
+    print("Checking server health...")
+    try:
+        health = client.health_check()
+        print(f"✅ Status: {health['status']}")
+        print(f"   Service: {health['service']}\n")
+    except Exception as e:
+        print(f"❌ Server not reachable: {e}")
+        print("   Make sure the HTTP server is running:")
+        print("   python fastmcp_http_server.py\n")
+        exit(1)
+
+    # List available tools
+    print("Available tools:")
+    tools = client.list_tools()
+    for tool in tools:
+        print(f"  - {tool['name']}: {tool['description']}")
+    print()
+
+    # Example: Analyze a sample log
+
+
+#     sample_log = """
+# [0m[1mInitializing the backend...[0m
+# [0m[32mSuccessfully configured the backend "azurerm"![0m
+# [0m[1mInitializing provider plugins...[0m
+# - Installing hashicorp/azurerm v4.34.0...
+# - Installed hashicorp/azurerm v4.34.0 (signed by HashiCorp)
+# [0m[1m[32mTerraform has been successfully initialized![0m[32m[0m
+#     """
+#
+#     print("Analyzing Terraform init log...")
+#     try:
+#         analysis = client.analyze_terraform_init(sample_log)
+#         print(analysis)
+#     except Exception as e:
+#         print(f"❌ Analysis failed: {e}")
+#
+#     # Using context manager
+#     print("\n" + "=" * 60)
+#     print("Using context manager:")
+#     print("=" * 60 + "\n")
+#
+#     with GitLabLogAnalyzer() as client:
+#         analysis = client.analyze_terraform_init(sample_log)
+#         print(analysis[:200] + "...")
+
+
+import asyncio
+from mcp import ClientSession
+from mcp.client.sse import sse_client
+
+async def main():
+    async with sse_client("http://localhost:8000/mcp") as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            response = await session.list_tools()
+            for tool in response.tools:
+                print(f"- {tool.name}: {tool.description}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
